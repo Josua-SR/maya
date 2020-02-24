@@ -1,0 +1,664 @@
+---
+kind: pipeline
+name: linux-amd64
+
+clone:
+  depth: 1
+
+platform:
+  os: linux
+  arch: amd64
+
+workspace:
+  path: /go/src/github.com/openebs/maya
+
+steps:
+  - name: dep
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add gcc git musl-dev
+      - go get github.com/golang/dep/cmd/dep
+      - dep ensure
+
+  - name: vet
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add gcc make musl-dev
+      - make compile-tests
+
+  - name: ctl
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/apiserver/
+    environment:
+      PNAME: maya
+      CTLNAME: mayactl
+
+  - name: apiserver
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: apiserver
+      CTLNAME: maya-apiserver
+
+  - name: exporter
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - cp -r vendor/* $GOPATH/src/
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: exporter
+      CTLNAME: maya-exporter
+
+  - name: cstor-pool-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cstor-pool-mgmt
+      CTLNAME: cstor-pool-mgmt
+
+  - name: cstor-volume-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cstor-volume-mgmt
+      CTLNAME: cstor-volume-mgmt
+
+  - name: cvc-operator
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cvc-operator
+      CTLNAME: cvc-operator
+
+  - name: cspi-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cspi-mgmt
+      CTLNAME: cspi-mgmt
+
+  - name: provisioner-localpv
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: provisioner-localpv
+      CTLNAME: provisioner-localpv
+
+  - name: admission-server
+    image: golang:1.12-buster
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: admission-server
+      CTLNAME: admission-server
+
+  - name: apiserver-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/apiserver/Dockerfile
+      context: buildscripts/apiserver
+      registry: quay.io
+      repo: quay.io/josua-sr/m-apiserver
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: exporter-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/exporter/Dockerfile
+      context: buildscripts/exporter
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/m-exporter
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: pool-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cstor-pool-mgmt/Dockerfile
+      context: buildscripts/cstor-pool-mgmt
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/cstor-pool-mgmt
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: volume-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cstor-volume-mgmt/Dockerfile
+      context: buildscripts/cstor-volume-mgmt
+      registry: quay.io
+      repo: quay.io/josua-sr/cstor-volume-mgmt
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cvc-operator-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cvc-operator/Dockerfile
+      context: buildscripts/cvc-operator
+      registry: quay.io
+      repo: quay.io/josua-sr/cvc-operator
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cspi-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cspi-mgmt/Dockerfile
+      context: buildscripts/cspi-mgmt
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/cspi-mgmt
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: provisioner-localpv-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/provisioner-localpv/Dockerfile
+      context: buildscripts/provisioner-localpv
+      registry: quay.io
+      repo: quay.io/josua-sr/provisioner-localpv
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: admission-server-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/admission-server/Dockerfile
+      context: buildscripts/admission-server
+      registry: quay.io
+      repo: quay.io/josua-sr/admission-server
+      tag: 1.7.0-amd64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+---
+kind: pipeline
+name: linux-arm64
+
+clone:
+  depth: 1
+
+platform:
+  os: linux
+  arch: arm64
+
+workspace:
+  path: /go/src/github.com/openebs/maya
+
+steps:
+  - name: dep
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add gcc git musl-dev
+      - go get github.com/golang/dep/cmd/dep
+      - dep ensure
+
+  - name: vet
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add gcc make musl-dev
+      - make compile-tests
+
+  - name: ctl
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/apiserver/
+    environment:
+      PNAME: maya
+      CTLNAME: mayactl
+
+  - name: apiserver
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: apiserver
+      CTLNAME: maya-apiserver
+
+  - name: exporter
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - cp -r vendor/* $GOPATH/src/
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: exporter
+      CTLNAME: maya-exporter
+
+  - name: cstor-pool-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cstor-pool-mgmt
+      CTLNAME: cstor-pool-mgmt
+
+  - name: cstor-volume-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cstor-volume-mgmt
+      CTLNAME: cstor-volume-mgmt
+
+  - name: cvc-operator
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cvc-operator
+      CTLNAME: cvc-operator
+
+  - name: cspi-mgmt
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: cspi-mgmt
+      CTLNAME: cspi-mgmt
+
+  - name: provisioner-localpv
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: provisioner-localpv
+      CTLNAME: provisioner-localpv
+
+  - name: admission-server
+    image: golang:1.12-alpine
+    volumes:
+      - name: cache
+        path: /var/cache
+    commands:
+      - ln -s /var/cache/apk /etc/apk/cache
+      - apk add bash gcc git musl-dev zip
+      - sh -c buildscripts/build.sh
+      - cp bin/$PNAME/$CTLNAME buildscripts/$PNAME/
+    environment:
+      PNAME: admission-server
+      CTLNAME: admission-server
+
+  - name: apiserver-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/apiserver/Dockerfile
+      context: buildscripts/apiserver
+      registry: quay.io
+      repo: quay.io/josua-sr/m-apiserver
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: exporter-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/exporter/Dockerfile
+      context: buildscripts/exporter
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/m-exporter
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: pool-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cstor-pool-mgmt/Dockerfile
+      context: buildscripts/cstor-pool-mgmt
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/cstor-pool-mgmt
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: volume-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cstor-volume-mgmt/Dockerfile
+      context: buildscripts/cstor-volume-mgmt
+      registry: quay.io
+      repo: quay.io/josua-sr/cstor-volume-mgmt
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cvc-operator-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cvc-operator/Dockerfile
+      context: buildscripts/cvc-operator
+      registry: quay.io
+      repo: quay.io/josua-sr/cvc-operator
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cspi-mgmt-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/cspi-mgmt/Dockerfile
+      context: buildscripts/cspi-mgmt
+      build_args:
+        - BASE_IMAGE=quay.io/josua-sr/cstor-base:1.7.0
+      registry: quay.io
+      repo: quay.io/josua-sr/cspi-mgmt
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: provisioner-localpv-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/provisioner-localpv/Dockerfile
+      context: buildscripts/provisioner-localpv
+      registry: quay.io
+      repo: quay.io/josua-sr/provisioner-localpv
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: admission-server-image
+    image: plugins/docker
+    settings:
+      dockerfile: buildscripts/admission-server/Dockerfile
+      context: buildscripts/admission-server
+      registry: quay.io
+      repo: quay.io/josua-sr/admission-server
+      tag: 1.7.0-arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+---
+kind: pipeline
+name: manifest
+
+clone:
+  disable: true
+
+platform:
+  os: linux
+
+steps:
+  - name: apiserver-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/m-apiserver:1.7.0
+      template: quay.io/josua-sr/m-apiserver:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: exporter-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/m-exporter:1.7.0
+      template: quay.io/josua-sr/m-exporter:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: pool-mgmt-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/cstor-pool-mgmt:1.7.0
+      template: quay.io/josua-sr/cstor-pool-mgmt:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: volume-mgmt-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/cstor-volume-mgmt:1.7.0
+      template: quay.io/josua-sr/cstor-volume-mgmt:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cvc-operator-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/cvc-operator:1.7.0
+      template: quay.io/josua-sr/cvc-operator:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: cspi-mgmt-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/cspi-mgmt:1.7.0
+      template: quay.io/josua-sr/cspi-mgmt:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: provisioner-localpv-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/provisioner-localpv:1.7.0
+      template: quay.io/josua-sr/provisioner-localpv:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+  - name: admission-server-image
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/admission-server:1.7.0
+      template: quay.io/josua-sr/admission-server:1.7.0-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+depends_on:
+- linux-amd64
+- linux-arm64
